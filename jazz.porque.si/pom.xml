@@ -83,8 +83,8 @@
 
 		<!-- MP3 tag library -->
 		<dependency>
-			<groupId>org.blinkenlights</groupId>
-			<artifactId>jid3</artifactId>
+			<groupId>org.blinkenlights.jid3</groupId>
+			<artifactId>JID3</artifactId>
 			<version>0.46</version>
 		</dependency>
 
