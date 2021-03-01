@@ -34,8 +34,7 @@ public class App {
     }
 
     public void execute(AppConfig appConfig) {
-        loadConfig
-                (appConfig);
+        loadConfig(appConfig);
 
         log.info("Loading information from JSON to mp3's...");
 
