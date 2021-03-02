@@ -1,7 +1,6 @@
 package com.caviedes.jazz.porque.si;
 
 import com.caviedes.jazz.porque.si.json.pojos.Item;
-import com.caviedes.jazz.porque.si.json.pojos.Quality;
 import com.caviedes.jazz.porque.si.json.pojos.Root;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.io.IOUtils;
@@ -14,13 +13,17 @@ import org.blinkenlights.jid3.MediaFile;
 import org.blinkenlights.jid3.v2.ID3V2Tag;
 import org.blinkenlights.jid3.v2.ID3V2_3_0Tag;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 
 import static com.caviedes.jazz.porque.si.AppConfig.Parameter.*;
 
@@ -133,10 +136,10 @@ public class App {
         if (audioNameObtained) {
 
             String audioId = audioNameSplit[0];
-            Item item = getMatchItem(audioId, jsonMainObject);
-            if (item != null) {
+            Optional<Item> item = getMatchItem(audioId, jsonMainObject);
+            if (item.isPresent()) {
 
-                String newAudioName = getFriendlyAudioName(item);
+                String newAudioName = getFriendlyAudioName(item.get());
 
                 File newFile = new File(currentAudio.getParent(), newAudioName);
                 if (currentAudio.renameTo(newFile)) {
@@ -151,7 +154,7 @@ public class App {
                             tag = new ID3V2_3_0Tag();
 
                         }
-                        setId3TagInformation(item, newAudioName, tag, audioFile);
+                        setId3TagInformation(item.get(), newAudioName, tag, audioFile);
 
                     } catch (ID3Exception e) {
                         log.error("Error trying to rename MP3 newFile: {}", newFile.getAbsolutePath());
@@ -197,25 +200,16 @@ public class App {
      * @param jsonMainObject
      * @return item that contains audio ID
      */
-    private static Item getMatchItem(String audioId, Root jsonMainObject) {
-
-        Item ret = null;
-
+    private static Optional<Item> getMatchItem(String audioId, Root jsonMainObject) {
         List<Item> itemList = jsonMainObject.getPage().getItems();
-        forItem:
-        for (Item item : itemList) {
-
-            for (Quality currentQuality : item.getQualities()) {
-
-                if (StringUtils.contains(currentQuality.getFilePath(), audioId + AUDIOS_EXTENSION)) {
-
-                    ret = item;
-                    break forItem;
-                }
-            }
-        }
-
-        return ret;
+        return !itemList.isEmpty()
+                ? itemList.stream()
+                .filter(item -> item.getQualities().stream()
+                        // If any match
+                        .anyMatch(quality -> StringUtils.contains(quality.getFilePath(), audioId + AUDIOS_EXTENSION)))
+                // get the first one
+                .findFirst()
+                : Optional.empty();
     }
 
     /**
@@ -228,12 +222,11 @@ public class App {
 
         if (item != null) {
 
-            String sb = getInvertedDate(item.getDateOfEmission()) + "_" +
+            ret = getInvertedDate(item.getDateOfEmission()) + "_" +
 
                     // Prevent problems with slash characters
                     StringUtils.replace(item.getShortTitle(), "/", "-") +
                     AUDIOS_EXTENSION;
-            ret = sb;
 
             log.info("Friendly audio name obtained: {}", ret);
         } else {
@@ -301,11 +294,7 @@ public class App {
 
         if (currentFolder != null) {
 
-            ret = currentFolder.listFiles(new FilenameFilter() {
-                public boolean accept(File current, String name) {
-                    return name.toLowerCase().endsWith(appConfig.getParameter(AUDIOS_EXTENSION));
-                }
-            });
+            ret = currentFolder.listFiles((current, name) -> name.toLowerCase().endsWith(appConfig.getParameter(AUDIOS_EXTENSION)));
 
         } else {
 
@@ -328,11 +317,7 @@ public class App {
             File mainFolder = new File(mainFolderPath);
             if (mainFolder.exists()) {
 
-                ret = mainFolder.listFiles(new FilenameFilter() {
-                    public boolean accept(File current, String name) {
-                        return new File(current, name).isDirectory();
-                    }
-                });
+                ret = mainFolder.listFiles((current, name) -> new File(current, name).isDirectory());
             } else {
                 log.error("The working folder {} do not exits. Have a look at MAIN_FOLDER_PATH", mainFolder);
             }
