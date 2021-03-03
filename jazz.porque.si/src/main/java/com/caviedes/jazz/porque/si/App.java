@@ -31,6 +31,8 @@ public class App {
 
     private static final Logger log = LogManager.getLogger(App.class);
     private AppConfig appConfig;
+    private SimpleDateFormat originalDateFormat;
+    private SimpleDateFormat invertedDateFormat;
 
     public void execute() {
         execute(null);
@@ -78,6 +80,9 @@ public class App {
         this.appConfig = appConfig == null
                 ? new AppConfig()
                 : appConfig;
+
+        originalDateFormat = new SimpleDateFormat(this.appConfig.getParameter(ORIGINAL_DATE_PATTERN));
+        invertedDateFormat = new SimpleDateFormat(this.appConfig.getParameter(DATE_INVERTED_PATTERN));
     }
 
     /**
@@ -199,11 +204,12 @@ public class App {
      */
     private static Optional<Item> getMatchItem(String audioId, Root jsonMainObject) {
         List<Item> itemList = jsonMainObject.getPage().getItems();
+        String fullFilename = String.format("%s%s", audioId, AUDIOS_EXTENSION);
         return !itemList.isEmpty()
                 ? itemList.stream()
                 .filter(item -> item.getQualities().stream()
                         // If any match
-                        .anyMatch(quality -> StringUtils.contains(quality.getFilePath(), audioId + AUDIOS_EXTENSION)))
+                        .anyMatch(quality -> StringUtils.contains(quality.getFilePath(), fullFilename)))
                 // get the first one
                 .findFirst()
                 : Optional.empty();
@@ -235,13 +241,9 @@ public class App {
      * @return date of emission in inverted way
      */
     private Optional<String> getInvertedDate(String dateOfEmission) {
-        // FIX[vpalau]: it has a cost to create a SimpleDateFormat. It is better to initial once an reuse it
-        SimpleDateFormat originalFormat = new SimpleDateFormat(appConfig.getParameter(ORIGINAL_DATE_PATTERN));
-        SimpleDateFormat invertedFormat = new SimpleDateFormat(appConfig.getParameter(DATE_INVERTED_PATTERN));
-
         try {
-            Date dateOriginal = originalFormat.parse(dateOfEmission);
-            return Optional.of(invertedFormat.format(dateOriginal));
+            Date dateOriginal = originalDateFormat.parse(dateOfEmission);
+            return Optional.of(invertedDateFormat.format(dateOriginal));
 
         } catch (ParseException e) {
             log.error("Error parsing date of emission {}", dateOfEmission);
