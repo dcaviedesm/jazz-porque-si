@@ -1,5 +1,8 @@
 package com.caviedes.jazz.porque.si.utils;
 
+import lombok.experimental.UtilityClass;
+
+@UtilityClass
 public class OSHelper {
     private static final String OS = System.getProperty("os.name").toLowerCase();
     public static final boolean IS_WINDOWS = (OS.contains("win"));
