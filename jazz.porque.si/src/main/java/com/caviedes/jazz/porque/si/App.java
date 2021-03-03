@@ -16,11 +16,11 @@ import org.blinkenlights.jid3.v2.ID3V2_3_0Tag;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -42,28 +42,36 @@ public class App {
         log.info("Loading information from JSON to mp3's...");
 
 
-        for (File currentFolder : getPagesFolders(appConfig.getParameter(MAIN_FOLDER_PATH))) {
+        String mainFolderPath = this.appConfig.getParameter(MAIN_FOLDER_PATH);
+        Optional<File[]> pagesFolders = getPagesFolders(mainFolderPath);
 
-            log.info("Processing page folder {}", currentFolder.getName());
-
-            int offset = getCurrentOffset(currentFolder);
-
-            Root jsonMainObject = getJsonBean(offset);
-
-            if (jsonMainObject != null) {
-
-                for (File currentAudio : getAudios(currentFolder)) {
-
-                    log.info("Processing audio {}", currentAudio.getName());
-
-                    processAudio(currentAudio, jsonMainObject);
-                }
-
-            } else {
-
-                log.error("It is necessary a JSON to process");
-            }
+        if (pagesFolders.isEmpty()) {
+            log.info("Not page folder to process for: {}", mainFolderPath);
+            return;
         }
+
+        Arrays.stream(pagesFolders.get())
+                .forEach(currentFolder -> {
+                    log.info("Processing page folder {}", currentFolder.getName());
+
+                    int offset = getCurrentOffset(currentFolder).orElse(0);
+                    Optional<Root> jsonMainObject = getJsonBean(offset);
+                    if (jsonMainObject.isEmpty()) {
+                        log.error("It is necessary a JSON to process");
+                        return;
+                    }
+
+                    Optional<File[]> audioFiles = getAudios(currentFolder);
+                    if (audioFiles.isEmpty()) {
+                        log.info("No audio to process into {}", currentFolder);
+                        return;
+                    }
+                    Arrays.stream(audioFiles.get())
+                            .forEachOrdered(currentAudio -> {
+                                log.info("Processing audio {}", currentAudio.getName());
+                                processAudio(currentAudio, jsonMainObject.get());
+                            });
+                });
     }
 
     private void loadConfig(AppConfig appConfig) {
@@ -76,52 +84,37 @@ public class App {
      * @param currentFolder
      * @return current offset based on folder name, that must have the same format: "XXX YY", where "YY" represents the page number of audios
      */
-    private int getCurrentOffset(File currentFolder) {
-
-        int ret = 0;
-
-        if (currentFolder != null) {
-
-            String[] folderNameSplit = currentFolder.getName().split(StringUtils.SPACE);
-            boolean isFolderNameSplit = (folderNameSplit.length == 2);
-            if (isFolderNameSplit) {
-
-                try {
-
-                    Integer pageNumber = Integer.valueOf(folderNameSplit[1]);
-                    ret = (pageNumber * appConfig.getParameterAsInt(AUDIOS_PER_PAGE)) - appConfig.getParameterAsInt(AUDIOS_PER_PAGE);
-
-                } catch (NumberFormatException e) {
-                    log.error("Folder name must contains page number: {}", folderNameSplit[1]);
-                }
-            }
-
-        } else {
-
+    private Optional<Integer> getCurrentOffset(File currentFolder) {
+        if (currentFolder == null) {
             log.error("Current folder cannot be null to calculate offset");
+            return Optional.empty();
         }
 
-        return ret;
+        String[] folderNameSplit = currentFolder.getName().split(StringUtils.SPACE);
+        if (folderNameSplit.length == 2) {
+
+            try {
+                Integer pageNumber = Integer.valueOf(folderNameSplit[1]);
+                return Optional.of((pageNumber * appConfig.getParameterAsInt(AUDIOS_PER_PAGE)) - appConfig.getParameterAsInt(AUDIOS_PER_PAGE));
+            } catch (NumberFormatException e) {
+                log.error("Folder name must contains page number: {}", folderNameSplit[1]);
+            }
+        }
+        return Optional.empty();
     }
 
     /**
      * @return java POJO representing JSON
      */
-    private Root getJsonBean(int offset) {
-
-        Root ret = null;
-
+    private Optional<Root> getJsonBean(int offset) {
         try {
-
             ObjectMapper objectMapper = new ObjectMapper();
-
-            ret = objectMapper.readValue(getJsonStringFromUrl(appConfig.getParameter(JSON_URL) + "?offset=" + offset), Root.class);
-
+            return Optional.ofNullable(objectMapper.readValue(getJsonStringFromUrl(appConfig.getParameter(JSON_URL) + "?offset=" + offset), Root.class));
         } catch (IOException e) {
             log.error("Error trying to map JSON {} to bean: {}", e.getMessage(), e);
         }
 
-        return ret;
+        return Optional.empty();
     }
 
     /**
@@ -131,45 +124,49 @@ public class App {
      */
     private void processAudio(File currentAudio, Root jsonMainObject) {
 
+        if (currentAudio == null) {
+            log.error("Cannot obtain audio ID of null file {}", jsonMainObject);
+            return;
+        }
+
         String[] audioNameSplit = currentAudio.getName().split(appConfig.getParameter(AUDIOS_EXTENSION));
-        boolean audioNameObtained = audioNameSplit.length > 0;
-        if (audioNameObtained) {
+        if (audioNameSplit.length == 0) {
+            log.error("Cannot obtain audio ID of file {}", currentAudio.getName());
+            return;
+        }
 
-            String audioId = audioNameSplit[0];
-            Optional<Item> item = getMatchItem(audioId, jsonMainObject);
-            if (item.isPresent()) {
+        String audioId = audioNameSplit[0];
+        Optional<Item> item = getMatchItem(audioId, jsonMainObject);
+        if (item.isEmpty()) {
+            log.error("Matched item not found: {}", audioId);
+            return;
+        }
 
-                String newAudioName = getFriendlyAudioName(item.get());
+        Optional<String> newAudioName = getFriendlyAudioName(item.get());
+        if (newAudioName.isEmpty()) {
+            log.error("Matched item {} doesn't generate a FriendlyAudioName", item.get());
+            return;
+        }
 
-                File newFile = new File(currentAudio.getParent(), newAudioName);
-                if (currentAudio.renameTo(newFile)) {
+        File newAudioFile = new File(currentAudio.getParent(), newAudioName.get());
+        if (!currentAudio.renameTo(newAudioFile)) {
+            log.error("CurrentAudio {} was not renamed to {}", currentAudio, newAudioFile);
+            return;
+        }
 
-                    MediaFile audioFile = new MP3File(newFile);
-                    try {
+        try {
+            MediaFile audioFile = new MP3File(newAudioFile);
+            ID3V2Tag tag = audioFile.getID3V2Tag();
 
-                        ID3V2Tag tag = audioFile.getID3V2Tag();
-                        if (tag == null) {
-
-                            log.info("Cannot obtain ID3 information, trying to create it from scratch...");
-                            tag = new ID3V2_3_0Tag();
-
-                        }
-                        setId3TagInformation(item.get(), newAudioName, tag, audioFile);
-
-                    } catch (ID3Exception e) {
-                        log.error("Error trying to rename MP3 newFile: {}", newFile.getAbsolutePath());
-                    }
-
-                } else {
-                    log.error("Matched item not found: {}", audioId);
-                }
-            } else {
-                log.error("Matched item not found: {}", audioId);
+            if (tag == null) {
+                log.info("Cannot obtain ID3 information, trying to create it from scratch...");
+                tag = new ID3V2_3_0Tag();
             }
 
-        } else {
+            setId3TagInformation(item.get(), newAudioName.get(), tag, audioFile);
 
-            log.error("Cannot obtain audio ID of file {}", currentAudio.getName());
+        } catch (ID3Exception e) {
+            log.error("Error trying to rename MP3 newAudioFile: {}", newAudioFile.getAbsolutePath());
         }
     }
 
@@ -216,48 +213,41 @@ public class App {
      * @param item
      * @return friendly audio name
      */
-    private String getFriendlyAudioName(Item item) {
-
-        String ret = StringUtils.EMPTY;
-
-        if (item != null) {
-
-            ret = getInvertedDate(item.getDateOfEmission()) + "_" +
-
-                    // Prevent problems with slash characters
-                    StringUtils.replace(item.getShortTitle(), "/", "-") +
-                    AUDIOS_EXTENSION;
-
-            log.info("Friendly audio name obtained: {}", ret);
-        } else {
-
+    private Optional<String> getFriendlyAudioName(Item item) {
+        if (item == null) {
             log.error("Item cannot be null");
+            return Optional.empty();
         }
 
-        return ret;
+        // Prevent problems with slash characters
+        String tmpName = String.format("%s_%s%s",
+                getInvertedDate(item.getDateOfEmission()),
+                StringUtils.replace(item.getShortTitle(), "/", "-"),
+                AUDIOS_EXTENSION
+        );
+
+        log.info("Friendly audio name obtained: {}", tmpName);
+        return Optional.of(tmpName);
     }
 
     /**
      * @param dateOfEmission
      * @return date of emission in inverted way
      */
-    private String getInvertedDate(String dateOfEmission) {
-
-        String ret = null;
-
+    private Optional<String> getInvertedDate(String dateOfEmission) {
+        // FIX[vpalau]: it has a cost to create a SimpleDateFormat. It is better to initial once an reuse it
         SimpleDateFormat originalFormat = new SimpleDateFormat(appConfig.getParameter(ORIGINAL_DATE_PATTERN));
         SimpleDateFormat invertedFormat = new SimpleDateFormat(appConfig.getParameter(DATE_INVERTED_PATTERN));
 
         try {
-
             Date dateOriginal = originalFormat.parse(dateOfEmission);
-            ret = invertedFormat.format(dateOriginal);
+            return Optional.of(invertedFormat.format(dateOriginal));
 
         } catch (ParseException e) {
             log.error("Error parsing date of emission {}", dateOfEmission);
         }
 
-        return ret;
+        return Optional.empty();
     }
 
     /**
@@ -279,54 +269,38 @@ public class App {
      * @throws IOException
      */
     private static String getJsonStringFromFile(String jsonFilePath) throws IOException {
-
-        InputStream is = new FileInputStream(jsonFilePath);
-        return IOUtils.toString(is, StandardCharsets.UTF_8);
+        return IOUtils.toString(new FileInputStream(jsonFilePath), StandardCharsets.UTF_8);
     }
 
     /**
      * @param currentFolder
      * @return array with files that represents audios of a defined extension
      */
-    private File[] getAudios(File currentFolder) {
-
-        File[] ret = null;
-
-        if (currentFolder != null) {
-
-            ret = currentFolder.listFiles((current, name) -> name.toLowerCase().endsWith(appConfig.getParameter(AUDIOS_EXTENSION)));
-
-        } else {
-
-            log.error("Current folder where to find audios cannot be null");
+    private Optional<File[]> getAudios(File currentFolder) {
+        if (currentFolder == null || !currentFolder.exists()) {
+            log.error("Current folder where to find audios must exist");
+            return Optional.empty();
         }
 
-        return ret;
+        return Optional.ofNullable(currentFolder.listFiles((current, name) -> name.toLowerCase().endsWith(appConfig.getParameter(AUDIOS_EXTENSION))));
     }
 
     /**
      * @param mainFolderPath
      * @return array with folders that represents pages of audios
      */
-    private static File[] getPagesFolders(String mainFolderPath) {
-
-        File[] ret = null;
-
-        if (StringUtils.isNotEmpty(mainFolderPath)) {
-
-            File mainFolder = new File(mainFolderPath);
-            if (mainFolder.exists()) {
-
-                ret = mainFolder.listFiles((current, name) -> new File(current, name).isDirectory());
-            } else {
-                log.error("The working folder {} do not exits. Have a look at MAIN_FOLDER_PATH", mainFolder);
-            }
-
-        } else {
-
+    private static Optional<File[]> getPagesFolders(String mainFolderPath) {
+        if (StringUtils.isBlank(mainFolderPath)) {
             log.error("The working folder must be. Have a look at MAIN_FOLDER_PATH");
+            return Optional.empty();
         }
 
-        return ret;
+        File mainFolder = new File(mainFolderPath);
+        if (!mainFolder.exists()) {
+            log.error("The working folder {} do not exits. Have a look at MAIN_FOLDER_PATH", mainFolder);
+            return Optional.empty();
+        }
+
+        return Optional.ofNullable(mainFolder.listFiles((current, name) -> new File(current, name).isDirectory()));
     }
 }
