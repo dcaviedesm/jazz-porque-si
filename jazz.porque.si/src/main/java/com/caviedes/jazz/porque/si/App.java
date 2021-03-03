@@ -53,7 +53,7 @@ public class App {
         }
 
         Arrays.stream(pagesFolders.get())
-                .forEach(currentFolder -> {
+                .forEachOrdered(currentFolder -> {
                     log.info("Processing page folder {}", currentFolder.getName());
 
                     int offset = getCurrentOffset(currentFolder).orElse(0);
