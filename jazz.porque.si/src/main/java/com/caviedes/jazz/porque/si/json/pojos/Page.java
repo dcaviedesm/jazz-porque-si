@@ -1,10 +1,12 @@
 package com.caviedes.jazz.porque.si.json.pojos;
 
-import lombok.Value;
-
 import java.util.List;
 
-@Value
+import lombok.Builder;
+import lombok.Value;
+import lombok.extern.jackson.Jacksonized;
+
+@Value @Jacksonized @Builder
 public class Page {
     List<Item> items;
     int number;
