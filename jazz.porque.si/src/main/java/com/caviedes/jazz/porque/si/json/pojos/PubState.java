@@ -1,11 +1,9 @@
 package com.caviedes.jazz.porque.si.json.pojos;
 
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.Value;
 
-@Getter @Setter @NoArgsConstructor
-public class PubState{
-    private String code;
-    private String description;
+@Value
+public class PubState {
+    String code;
+    String description;
 }
