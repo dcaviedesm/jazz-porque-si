@@ -204,7 +204,7 @@ public class App {
      */
     private static Optional<Item> getMatchItem(String audioId, Root jsonMainObject) {
         List<Item> itemList = jsonMainObject.getPage().getItems();
-        String fullFilename = String.format("%s%s", audioId, AUDIOS_EXTENSION);
+        String fullFilename = String.format("%s%s", audioId, AUDIOS_EXTENSION.getDefaultValue());
         return !itemList.isEmpty()
                 ? itemList.stream()
                 .filter(item -> item.getQualities().stream()
@@ -225,11 +225,17 @@ public class App {
             return Optional.empty();
         }
 
+        Optional<String> invertedDate = getInvertedDate(item.getDateOfEmission());
+        if (invertedDate.isEmpty()) {
+            log.error("Impossible to get inverted date of emission");
+            return Optional.empty();
+		}
+        
         // Prevent problems with slash characters
         String tmpName = String.format("%s_%s%s",
-                getInvertedDate(item.getDateOfEmission()),
+        		invertedDate.get(),
                 StringUtils.replace(item.getShortTitle(), "/", "-"),
-                AUDIOS_EXTENSION
+                AUDIOS_EXTENSION.getDefaultValue()
         );
 
         log.info("Friendly audio name obtained: {}", tmpName);
