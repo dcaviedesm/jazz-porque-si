@@ -7,7 +7,7 @@ import java.util.Properties;
 
 public class AppConfig {
     public enum Parameter {
-        MAIN_FOLDER_PATH(System.getProperty("java.io.tmpdir") + System.getProperty("path.separator") + "Jazz porque si"),
+    	MAIN_FOLDER_PATH(System.getProperty("java.io.tmpdir") + "Jazz porque si"),
         AUDIOS_EXTENSION(".mp3"),
         JSON_URL("http://www.rtve.es/api/programas/1999/audios.json"),
         JSON_PATH(OSHelper.IS_WINDOWS
