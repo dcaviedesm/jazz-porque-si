@@ -1,11 +1,10 @@
 package com.caviedes.jazz.porque.si.json.pojos;
 
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.Builder;
+import lombok.Value;
+import lombok.extern.jackson.Jacksonized;
 
-@Getter @Setter @NoArgsConstructor
-public class Root{
-    private Page page;
-
+@Value @Jacksonized @Builder
+public class Root {
+    Page page;
 }

@@ -1,11 +1,11 @@
 package com.caviedes.jazz.porque.si.json.pojos;
 
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.Builder;
+import lombok.Value;
+import lombok.extern.jackson.Jacksonized;
 
-@Getter @Setter @NoArgsConstructor
-public class Type{
-    private int id;
-    private String name;
+@Value @Jacksonized @Builder
+public class Type {
+    int id;
+    String name;
 }

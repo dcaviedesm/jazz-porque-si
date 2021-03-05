@@ -1,11 +1,11 @@
 package com.caviedes.jazz.porque.si.json.pojos;
 
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.Builder;
+import lombok.Value;
+import lombok.extern.jackson.Jacksonized;
 
-@Getter @Setter @NoArgsConstructor
-public class Previews{
+@Value @Jacksonized @Builder
+public class Previews {
     private Object horizontal;
     private Object horizontal2;
     private Object vertical;

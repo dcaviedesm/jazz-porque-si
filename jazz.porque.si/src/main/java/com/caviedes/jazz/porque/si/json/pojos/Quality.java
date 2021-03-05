@@ -1,19 +1,19 @@
 package com.caviedes.jazz.porque.si.json.pojos;
 
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.Builder;
+import lombok.Value;
+import lombok.extern.jackson.Jacksonized;
 
-@Getter @Setter @NoArgsConstructor
-public class Quality{
-    private int identifier;
-    private String filePath;
-    private String preset;
-    private int filesize;
-    private String type;
-    private int duration;
-    private int bitRate;
-    private Object bitRateUnit;
-    private String language;
-    private int numOfChannels;
+@Value @Jacksonized @Builder
+public class Quality {
+    int identifier;
+    String filePath;
+    String preset;
+    int filesize;
+    String type;
+    int duration;
+    int bitRate;
+    Object bitRateUnit;
+    String language;
+    int numOfChannels;
 }
