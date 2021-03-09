@@ -229,11 +229,11 @@ public class App {
         if (invertedDate.isEmpty()) {
             log.error("Impossible to get inverted date of emission");
             return Optional.empty();
-		}
-        
+        }
+
         // Prevent problems with slash characters
         String tmpName = String.format("%s_%s%s",
-        		invertedDate.get(),
+                invertedDate.get(),
                 StringUtils.replace(item.getShortTitle(), "/", "-"),
                 AUDIOS_EXTENSION.getDefaultValue()
         );

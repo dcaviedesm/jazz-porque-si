@@ -32,7 +32,6 @@ hs_err_pid*
 target
 
 ### Eclipse template
-.metadata
 bin/
 tmp/
 *.tmp

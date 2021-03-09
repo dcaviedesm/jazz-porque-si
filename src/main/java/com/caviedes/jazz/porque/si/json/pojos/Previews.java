@@ -4,12 +4,14 @@ import lombok.Builder;
 import lombok.Value;
 import lombok.extern.jackson.Jacksonized;
 
-@Value @Jacksonized @Builder
+@Builder
+@Jacksonized
+@Value
 public class Previews {
-    private Object horizontal;
-    private Object horizontal2;
-    private Object vertical;
-    private Object vertical2;
-    private Object square;
-    private Object square2;
+    Object horizontal;
+    Object horizontal2;
+    Object vertical;
+    Object vertical2;
+    Object square;
+    Object square2;
 }
