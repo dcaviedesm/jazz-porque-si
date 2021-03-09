@@ -7,9 +7,8 @@ import lombok.extern.jackson.Jacksonized;
 import java.util.List;
 
 @Builder
-@Value
 @Jacksonized
-
+@Value
 public class Item {
     String uri;
     String htmlUrl;

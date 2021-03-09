@@ -5,8 +5,8 @@ import lombok.Value;
 import lombok.extern.jackson.Jacksonized;
 
 @Builder
-@Value
 @Jacksonized
+@Value
 public class Root {
     Page page;
 }
