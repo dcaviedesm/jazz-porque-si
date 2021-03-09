@@ -1,12 +1,15 @@
 package com.caviedes.jazz.porque.si.json.pojos;
 
-import java.util.List;
-
 import lombok.Builder;
 import lombok.Value;
 import lombok.extern.jackson.Jacksonized;
 
-@Value @Jacksonized @Builder
+import java.util.List;
+
+@Builder
+@Value
+@Jacksonized
+
 public class Item {
     String uri;
     String htmlUrl;

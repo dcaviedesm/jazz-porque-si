@@ -9,18 +9,18 @@ class AppTest {
     private App app;
 
     @BeforeEach
-    private void setup(){
+    private void setup() {
         app = new App();
     }
 
     @AfterEach
-    private void cleanup(){
+    private void cleanup() {
         // delete temp folders and files
         // TODO
     }
 
     @Test
-    void executeATest(){
+    void executeATest() {
         app.execute();
 
         Assertions.fail("to be implemented");
