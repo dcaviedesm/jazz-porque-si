@@ -16,7 +16,8 @@ public class AppConfig {
         ),
         DATE_INVERTED_PATTERN("yyMMdd"),
         ORIGINAL_DATE_PATTERN("dd-MM-yyyy HH:mm:ss"),
-        AUDIOS_PER_PAGE(20);
+        AUDIOS_PER_PAGE(20),
+        PAGE_FOLDER_PREFIX("Pag ");
 
         @Getter
         private final Object defaultValue;

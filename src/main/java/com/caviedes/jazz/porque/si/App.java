@@ -1,8 +1,28 @@
 package com.caviedes.jazz.porque.si;
 
-import com.caviedes.jazz.porque.si.json.pojos.Item;
-import com.caviedes.jazz.porque.si.json.pojos.Root;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import static com.caviedes.jazz.porque.si.AppConfig.Parameter.AUDIOS_EXTENSION;
+import static com.caviedes.jazz.porque.si.AppConfig.Parameter.AUDIOS_PER_PAGE;
+import static com.caviedes.jazz.porque.si.AppConfig.Parameter.DATE_INVERTED_PATTERN;
+import static com.caviedes.jazz.porque.si.AppConfig.Parameter.JSON_URL;
+import static com.caviedes.jazz.porque.si.AppConfig.Parameter.MAIN_FOLDER_PATH;
+import static com.caviedes.jazz.porque.si.AppConfig.Parameter.ORIGINAL_DATE_PATTERN;
+import static com.caviedes.jazz.porque.si.AppConfig.Parameter.PAGE_FOLDER_PREFIX;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.IntStream;
+
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
@@ -13,19 +33,9 @@ import org.blinkenlights.jid3.MediaFile;
 import org.blinkenlights.jid3.v2.ID3V2Tag;
 import org.blinkenlights.jid3.v2.ID3V2_3_0Tag;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.List;
-import java.util.Optional;
-
-import static com.caviedes.jazz.porque.si.AppConfig.Parameter.*;
+import com.caviedes.jazz.porque.si.json.pojos.Item;
+import com.caviedes.jazz.porque.si.json.pojos.Root;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class App {
 
@@ -39,17 +49,18 @@ public class App {
     }
 
     public void execute(AppConfig appConfig) {
+
         loadConfig(appConfig);
-
+        
         log.info("Loading information from JSON to mp3's...");
-
 
         String mainFolderPath = this.appConfig.getParameter(MAIN_FOLDER_PATH);
         Optional<File[]> pagesFolders = getPagesFolders(mainFolderPath);
-
-        if (pagesFolders.isEmpty()) {
-            log.info("Not page folder to process for: {}", mainFolderPath);
-            return;
+        Optional<Root> firstPageJsonBean = getFirstPageJsonBean();
+        
+        if (isMissingPagesFolders(pagesFolders, firstPageJsonBean)) {
+            createMissingPagesfolders(pagesFolders, firstPageJsonBean, mainFolderPath);
+            pagesFolders = getPagesFolders(mainFolderPath);
         }
 
         Arrays.stream(pagesFolders.get())
@@ -63,7 +74,7 @@ public class App {
                         return;
                     }
 
-                    Optional<File[]> audioFiles = getAudios(currentFolder);
+                    Optional<File[]> audioFiles = getAudios(currentFolder, jsonMainObject);
                     if (audioFiles.isEmpty()) {
                         log.info("No audio to process into {}", currentFolder);
                         return;
@@ -76,6 +87,77 @@ public class App {
                 });
     }
 
+    /**
+     * @return JSON bean representing first page of audios
+     */
+    private Optional<Root> getFirstPageJsonBean() {
+        
+        return getJsonBean(0);
+    }
+
+    /**
+     * @param pagesFolders
+     * @param firstPageJsonBean
+     * @param mainFolderPath 
+     */
+    private void createMissingPagesfolders(Optional<File[]> pagesFolders, Optional<Root> firstPageJsonBean, String mainFolderPath) {
+        
+        if (firstPageJsonBean.isPresent()) {
+            Integer totalPagesFolders = firstPageJsonBean.get().getPage().getTotalPages();
+            IntStream.rangeClosed(1, totalPagesFolders.intValue())
+                .forEach(i -> createPageFolderIfNecessary(i, mainFolderPath));
+            
+        }else {
+            
+            log.error("Cannot create pages folders because it is needed information about pages from API!!");
+        }
+    }
+
+    /**
+     * Creates page folder corresponding to "i" number, if it doesn´t already exists
+     * 
+     * @param i
+     * @param mainFolderPath 
+     */
+    private void createPageFolderIfNecessary(Integer i, String mainFolderPath) {
+        
+        String currentPageNumber = (i < 10) ? "0" + i.toString() : i.toString();
+        String currentPageFolderName = this.appConfig.getParameter(PAGE_FOLDER_PREFIX) + currentPageNumber;
+        
+        File currentPageFolder = new File(mainFolderPath, currentPageFolderName);
+        if (! currentPageFolder.exists()) {
+            
+            if (! currentPageFolder.mkdir()) {
+                log.error("Unable to create current page folder: " + currentPageFolderName);
+            }
+        }
+    }
+
+    /**
+     * @param pagesFolders
+     * @param firstPageJsonBean
+     * @return true if some pages folders (or all of its) are missing 
+     */
+    private boolean isMissingPagesFolders(Optional<File[]> pagesFolders, Optional<Root> firstPageJsonBean) {
+        
+        if (firstPageJsonBean.isPresent()) {
+            Integer totalPagesFolders = firstPageJsonBean.get().getPage().getTotalPages();
+            boolean isMissingAllPagesFolders = pagesFolders.isEmpty();
+            boolean isMissingSomePagesFolders = (pagesFolders.isPresent() && (pagesFolders.get().length < totalPagesFolders));
+            
+            return isMissingAllPagesFolders || isMissingSomePagesFolders;
+            
+        }else {
+            
+            return true;
+        }
+    }
+
+    /**
+     * Loads app configuration from parameter if not null, otherwise it will initialize a default config
+     * 
+     * @param appConfig
+     */
     private void loadConfig(AppConfig appConfig) {
         this.appConfig = appConfig == null
                 ? new AppConfig()
@@ -282,15 +364,68 @@ public class App {
 
     /**
      * @param currentFolder
+     * @param jsonMainObject 
      * @return array with files that represents audios of a defined extension
      */
-    private Optional<File[]> getAudios(File currentFolder) {
-        if (currentFolder == null || !currentFolder.exists()) {
+    private Optional<File[]> getAudios(File currentFolder, Optional<Root> jsonMainObject) {
+        if (currentFolder == null || ! currentFolder.exists()) {
             log.error("Current folder where to find audios must exist");
             return Optional.empty();
         }
+        
+        if (jsonMainObject.isPresent()) {
+            
+            jsonMainObject.get().getPage().getItems().stream()
+            .forEach(currentItem -> {
+                
+                log.info("Processing item {}", currentItem.getLongTitle());
+                
+                // Get file name
+                Optional<String> fileName = getFileName(currentItem);
+                
+                // Try to get already downloaded file
+                String localFilePath = currentFolder.getPath() + "/" + fileName;
+                File file = new File(localFilePath);            
+                
+                // If not downloaded, download it
+                if (! file.isFile()) {
+                    String fileUrl = currentItem.getQualities().stream().findFirst().get().getFilePath();
+                    try {
+                        FileUtils.copyURLToFile(
+                                new URL(fileUrl), 
+                                new File(localFilePath), 
+                                10000, 
+                                10000);
+                    } catch (MalformedURLException e) {
+                        log.error("Problem with URL {} while trying to download it: {}", fileUrl, e);
+                    } catch (IOException e) {
+                        log.error("I/O problem while trying to download dile {}: {}", fileUrl, e);
+                    }
+                }
+                
+            });
+            
+        }else {
+            
+            log.error("API information about current page is necessary!!");
+            return Optional.empty();
+        }
 
-        return Optional.ofNullable(currentFolder.listFiles((current, name) -> name.toLowerCase().endsWith(appConfig.getParameter(AUDIOS_EXTENSION))));
+        return Optional.ofNullable(currentFolder.listFiles((current, name) -> name.toLowerCase().endsWith(this.appConfig.getParameter(AUDIOS_EXTENSION))));
+    }
+    
+    private Optional<String> getFileName(Item item) {
+        
+        Optional<String> ret = Optional.empty();
+
+        String filePath = item.getQualities().stream().findFirst().get().getFilePath();
+        String[] filePathSplitted = filePath.split("/");
+        if (filePathSplitted.length > 1) { // URL obtained
+            
+            ret = Optional.ofNullable(filePathSplitted[filePathSplitted.length-1]);
+        }
+        
+        return ret;
     }
 
     /**
