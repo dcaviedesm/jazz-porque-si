@@ -115,10 +115,9 @@ public class App {
      *
      * @param i
      */
-    private void createPageFolderIfNecessary(Integer i) {
+    private void createPageFolderIfNecessary(Integer currentPageNumber) {
 
-        String currentPageNumber = String.format("%02d", i);
-        String currentPageFolderName = String.format("%s%s", this.appConfig.getParameter(PAGE_FOLDER_PREFIX), currentPageNumber);
+        String currentPageFolderName = String.format("%s%02d", this.appConfig.getParameter(PAGE_FOLDER_PREFIX), currentPageNumber);
 
         File currentPageFolder = new File(mainFolderPath, currentPageFolderName);
         if (!currentPageFolder.exists() && !currentPageFolder.mkdir()) {
@@ -194,7 +193,7 @@ public class App {
     private Optional<Root> getJsonBean(int offset) {
         try {
             ObjectMapper objectMapper = new ObjectMapper();
-            return Optional.ofNullable(objectMapper.readValue(getJsonStringFromUrl(appConfig.getParameter(JSON_URL) + "?offset=" + offset), Root.class));
+            return Optional.ofNullable(objectMapper.readValue(getJsonStringFromUrl(String.format("%s?offset=%d", appConfig.getParameter(JSON_URL), offset)), Root.class));
         } catch (IOException e) {
             log.error("Error trying to map JSON {} to bean: {}", e.getMessage(), e);
             return Optional.empty();
@@ -354,6 +353,7 @@ public class App {
     }
 
     /**
+     * TODO: Delete is no needed????
      * @param jsonFilePath
      * @return Json string
      * @throws IOException
@@ -405,9 +405,9 @@ public class App {
             // If not downloaded, download it
             File file = new File(localFilePath);
             if (isFileValid(file)) {
-                Optional<Quality> first = currentItem.getQualities().stream().findFirst();
-                if (first.isPresent()) {
-                    String fileUrl = first.get().getFilePath();
+                Optional<Quality> quality = currentItem.getQualities().stream().findFirst();
+                if (quality.isPresent()) {
+                    String fileUrl = quality.get().getFilePath();
                     try {
                         FileUtils.copyURLToFile(
                             new URL(fileUrl),
@@ -431,13 +431,13 @@ public class App {
     private Optional<String> getFileName(Item item) {
         Optional<String> ret = Optional.empty();
 
-        Optional<Quality> first = item.getQualities().stream().findFirst();
-        if (first.isEmpty()) {
+        Optional<Quality> quality = item.getQualities().stream().findFirst();
+        if (quality.isEmpty()) {
             log.warn("No Quality found for Item.title {}", item.getTitle());
             return ret;
         }
 
-        String filePath = first.get().getFilePath();
+        String filePath = quality.get().getFilePath();
         String[] filePathSplit = filePath.split("/");
         if (filePathSplit.length > 1) { // URL obtained
             return Optional.ofNullable(filePathSplit[filePathSplit.length - 1]);
