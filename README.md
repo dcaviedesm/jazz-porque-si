@@ -19,10 +19,10 @@ This Java project (uses Maven) has the class "App.java" as its central class. In
 ## Configuration
 The above aspects are important as the Java project assumes them:
 Within the main class of the project, there are a series of defined constants, some of which need to be customized for each case. We indicate the meaning of each of them:
-* mainFolderPath: physical path where the folders that represent the audio pages are located (Page 01, Page 02, etc)
+* mainFolderPath: a physical path where the folders that represent the audio pages are located (Page 01, Page 02, etc)
 * audiosExtension: extension of the audio files
 * jsonUrl: base URL of the RTVE API to obtain the information of the audios of the "Jazz porque sí" program (whose RTVE identifier is "1999")
-* jsonPath: physical path in case we had a single JSON with all the information of the audios (obsolete)
+* jsonPath: a physical path in case we had a single JSON with all the information of the audios (obsolete)
 * dateInvertedPattern: date pattern that will be used to rename the beginning of the names of each audio
 * originalDatePattern: original date / time pattern from the RTVE API
 * audiosPerPage: number of audios per page on the RTVE website

@@ -1,12 +1,19 @@
 package com.caviedes.jazz.porque.si;
 
-import static com.caviedes.jazz.porque.si.AppConfig.Parameter.AUDIOS_EXTENSION;
-import static com.caviedes.jazz.porque.si.AppConfig.Parameter.AUDIOS_PER_PAGE;
-import static com.caviedes.jazz.porque.si.AppConfig.Parameter.DATE_INVERTED_PATTERN;
-import static com.caviedes.jazz.porque.si.AppConfig.Parameter.JSON_URL;
-import static com.caviedes.jazz.porque.si.AppConfig.Parameter.MAIN_FOLDER_PATH;
-import static com.caviedes.jazz.porque.si.AppConfig.Parameter.ORIGINAL_DATE_PATTERN;
-import static com.caviedes.jazz.porque.si.AppConfig.Parameter.PAGE_FOLDER_PREFIX;
+import com.caviedes.jazz.porque.si.json.pojos.Item;
+import com.caviedes.jazz.porque.si.json.pojos.Quality;
+import com.caviedes.jazz.porque.si.json.pojos.Root;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.blinkenlights.jid3.ID3Exception;
+import org.blinkenlights.jid3.MP3File;
+import org.blinkenlights.jid3.MediaFile;
+import org.blinkenlights.jid3.v2.ID3V2Tag;
+import org.blinkenlights.jid3.v2.ID3V2_3_0Tag;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -20,22 +27,10 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.stream.IntStream;
 
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.blinkenlights.jid3.ID3Exception;
-import org.blinkenlights.jid3.MP3File;
-import org.blinkenlights.jid3.MediaFile;
-import org.blinkenlights.jid3.v2.ID3V2Tag;
-import org.blinkenlights.jid3.v2.ID3V2_3_0Tag;
-
-import com.caviedes.jazz.porque.si.json.pojos.Item;
-import com.caviedes.jazz.porque.si.json.pojos.Root;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import static com.caviedes.jazz.porque.si.AppConfig.Parameter.*;
 
 public class App {
 
@@ -43,6 +38,7 @@ public class App {
     private AppConfig appConfig;
     private SimpleDateFormat originalDateFormat;
     private SimpleDateFormat invertedDateFormat;
+    private String mainFolderPath;
 
     public void execute() {
         execute(null);
@@ -51,117 +47,111 @@ public class App {
     public void execute(AppConfig appConfig) {
 
         loadConfig(appConfig);
-        
+
         log.info("Loading information from JSON to mp3's...");
 
-        String mainFolderPath = this.appConfig.getParameter(MAIN_FOLDER_PATH);
-        Optional<File[]> pagesFolders = getPagesFolders(mainFolderPath);
-        Optional<Root> firstPageJsonBean = getFirstPageJsonBean();
-        
-        if (isMissingPagesFolders(pagesFolders, firstPageJsonBean)) {
-            createMissingPagesfolders(pagesFolders, firstPageJsonBean, mainFolderPath);
-            pagesFolders = getPagesFolders(mainFolderPath);
+        mainFolderPath = this.appConfig.getParameter(MAIN_FOLDER_PATH);
+        File[] pagesFolders = ensurePagesFolders();
+
+        Arrays.stream(pagesFolders)
+            .forEachOrdered(currentFolder -> {
+                log.info("Processing page folder {}", currentFolder.getName());
+
+                int offset = getCurrentOffset(currentFolder).orElse(0);
+                Optional<Root> jsonMainObject = getJsonBean(offset);
+                if (jsonMainObject.isEmpty()) {
+                    log.error("It is necessary a JSON to process");
+                    return;
+                }
+
+                Optional<File[]> audioFiles = getAudios(currentFolder, jsonMainObject.get());
+                if (audioFiles.isEmpty()) {
+                    log.info("No audio to process into {}", currentFolder);
+                    return;
+                }
+
+                Arrays.stream(audioFiles.get())
+                    .forEachOrdered(currentAudio -> {
+                        log.info("Processing audio {}", currentAudio.getName());
+                        processAudio(currentAudio, jsonMainObject.get());
+                    });
+            });
+    }
+
+    private File[] ensurePagesFolders() {
+        File[] pagesFolders = getPagesFolders(mainFolderPath).orElse(null);
+        Root root = getJsonBean().orElse(null);
+
+        if (isMissingPagesFolders(pagesFolders, root)) {
+            createMissingPagesFolders(root);
+            pagesFolders = getPagesFolders(mainFolderPath).orElse(null);
         }
 
-        Arrays.stream(pagesFolders.get())
-                .forEachOrdered(currentFolder -> {
-                    log.info("Processing page folder {}", currentFolder.getName());
+        if (pagesFolders == null || pagesFolders.length == 0) {
+            log.warn("No pagesFoldes found for: {}", mainFolderPath);
+        }
 
-                    int offset = getCurrentOffset(currentFolder).orElse(0);
-                    Optional<Root> jsonMainObject = getJsonBean(offset);
-                    if (jsonMainObject.isEmpty()) {
-                        log.error("It is necessary a JSON to process");
-                        return;
-                    }
-
-                    Optional<File[]> audioFiles = getAudios(currentFolder, jsonMainObject);
-                    if (audioFiles.isEmpty()) {
-                        log.info("No audio to process into {}", currentFolder);
-                        return;
-                    }
-                    Arrays.stream(audioFiles.get())
-                            .forEachOrdered(currentAudio -> {
-                                log.info("Processing audio {}", currentAudio.getName());
-                                processAudio(currentAudio, jsonMainObject.get());
-                            });
-                });
+        return pagesFolders;
     }
 
     /**
-     * @return JSON bean representing first page of audios
-     */
-    private Optional<Root> getFirstPageJsonBean() {
-        
-        return getJsonBean(0);
-    }
-
-    /**
-     * @param pagesFolders
      * @param firstPageJsonBean
-     * @param mainFolderPath 
      */
-    private void createMissingPagesfolders(Optional<File[]> pagesFolders, Optional<Root> firstPageJsonBean, String mainFolderPath) {
-        
-        if (firstPageJsonBean.isPresent()) {
-            Integer totalPagesFolders = firstPageJsonBean.get().getPage().getTotalPages();
-            IntStream.rangeClosed(1, totalPagesFolders.intValue())
-                .forEach(i -> createPageFolderIfNecessary(i, mainFolderPath));
-            
-        }else {
-            
+    private void createMissingPagesFolders(Root firstPageJsonBean) {
+
+        if (firstPageJsonBean != null) {
+            int totalPagesFolders = firstPageJsonBean.getPage().getTotalPages();
+            IntStream.rangeClosed(1, totalPagesFolders)
+                .forEach(this::createPageFolderIfNecessary);
+
+        } else {
+
             log.error("Cannot create pages folders because it is needed information about pages from API!!");
         }
     }
 
     /**
      * Creates page folder corresponding to "i" number, if it doesn´t already exists
-     * 
+     *
      * @param i
-     * @param mainFolderPath 
      */
-    private void createPageFolderIfNecessary(Integer i, String mainFolderPath) {
-        
-        String currentPageNumber = (i < 10) ? "0" + i.toString() : i.toString();
-        String currentPageFolderName = this.appConfig.getParameter(PAGE_FOLDER_PREFIX) + currentPageNumber;
-        
+    private void createPageFolderIfNecessary(Integer currentPageNumber) {
+
+        String currentPageFolderName = String.format("%s%02d", this.appConfig.getParameter(PAGE_FOLDER_PREFIX), currentPageNumber);
+
         File currentPageFolder = new File(mainFolderPath, currentPageFolderName);
-        if (! currentPageFolder.exists()) {
-            
-            if (! currentPageFolder.mkdir()) {
-                log.error("Unable to create current page folder: " + currentPageFolderName);
-            }
+        if (!currentPageFolder.exists() && !currentPageFolder.mkdir()) {
+            log.error("Unable to create current page folder: {}", currentPageFolderName);
         }
     }
 
     /**
      * @param pagesFolders
-     * @param firstPageJsonBean
-     * @return true if some pages folders (or all of its) are missing 
+     * @param root
+     * @return true if some pages folders (or all of its) are missing
      */
-    private boolean isMissingPagesFolders(Optional<File[]> pagesFolders, Optional<Root> firstPageJsonBean) {
-        
-        if (firstPageJsonBean.isPresent()) {
-            Integer totalPagesFolders = firstPageJsonBean.get().getPage().getTotalPages();
-            boolean isMissingAllPagesFolders = pagesFolders.isEmpty();
-            boolean isMissingSomePagesFolders = (pagesFolders.isPresent() && (pagesFolders.get().length < totalPagesFolders));
-            
+    private boolean isMissingPagesFolders(File[] pagesFolders, Root root) {
+
+        if (root != null && root.getPage() != null) {
+            int totalPagesFolders = root.getPage().getTotalPages();
+            boolean isMissingAllPagesFolders = pagesFolders == null;
+            boolean isMissingSomePagesFolders = (pagesFolders != null && (pagesFolders.length < totalPagesFolders));
+
             return isMissingAllPagesFolders || isMissingSomePagesFolders;
-            
-        }else {
-            
-            return true;
         }
+
+        return true;
     }
 
     /**
      * Loads app configuration from parameter if not null, otherwise it will initialize a default config
-     * 
+     *
      * @param appConfig
      */
     private void loadConfig(AppConfig appConfig) {
         this.appConfig = appConfig == null
-                ? new AppConfig()
-                : appConfig;
+            ? new AppConfig()
+            : appConfig;
 
         originalDateFormat = new SimpleDateFormat(this.appConfig.getParameter(ORIGINAL_DATE_PATTERN));
         invertedDateFormat = new SimpleDateFormat(this.appConfig.getParameter(DATE_INVERTED_PATTERN));
@@ -191,17 +181,23 @@ public class App {
     }
 
     /**
+     * @return JSON bean representing first page of audios
+     */
+    private Optional<Root> getJsonBean() {
+        return getJsonBean(0);
+    }
+
+    /**
      * @return java POJO representing JSON
      */
     private Optional<Root> getJsonBean(int offset) {
         try {
             ObjectMapper objectMapper = new ObjectMapper();
-            return Optional.ofNullable(objectMapper.readValue(getJsonStringFromUrl(appConfig.getParameter(JSON_URL) + "?offset=" + offset), Root.class));
+            return Optional.ofNullable(objectMapper.readValue(getJsonStringFromUrl(String.format("%s?offset=%d", appConfig.getParameter(JSON_URL), offset)), Root.class));
         } catch (IOException e) {
             log.error("Error trying to map JSON {} to bean: {}", e.getMessage(), e);
+            return Optional.empty();
         }
-
-        return Optional.empty();
     }
 
     /**
@@ -242,37 +238,37 @@ public class App {
         }
 
         try {
-            MediaFile audioFile = new MP3File(newAudioFile);
-            ID3V2Tag tag = audioFile.getID3V2Tag();
-
-            if (tag == null) {
-                log.info("Cannot obtain ID3 information, trying to create it from scratch...");
-                tag = new ID3V2_3_0Tag();
-            }
-
-            setId3TagInformation(item.get(), newAudioName.get(), tag, audioFile);
-
+             setId3TagInformation(item.get(), newAudioName.get(), new MP3File(newAudioFile));
         } catch (ID3Exception e) {
             log.error("Error trying to rename MP3 newAudioFile: {}", newAudioFile.getAbsolutePath());
         }
     }
 
+    private static ID3V2Tag ensureGetId3V2Tag(MediaFile audioFile) throws ID3Exception {
+        ID3V2Tag tag = audioFile.getID3V2Tag();
+
+        if (tag == null) {
+            log.info("Cannot obtain ID3 information, trying to create it from scratch...");
+            tag = new ID3V2_3_0Tag();
+        }
+
+        return tag;
+    }
+
     /**
      * Sets ID3 information and syncs audio file
-     *
-     * @param item
+     *  @param item
      * @param newAudioName
-     * @param tag
-     * @param audioFile
+     * @param mp3File
      */
-    private static void setId3TagInformation(Item item, String newAudioName, ID3V2Tag tag, MediaFile audioFile) {
-
+    private static void setId3TagInformation(Item item, String newAudioName, MediaFile mp3File) throws ID3Exception {
+        ID3V2Tag tag = ensureGetId3V2Tag(mp3File);
         try {
 
             tag.setComment(StringUtils.defaultString(item.getDescription()));
             tag.setTitle(newAudioName);
-            audioFile.setID3Tag(tag);
-            audioFile.sync();
+            mp3File.setID3Tag(tag);
+            mp3File.sync();
 
         } catch (ID3Exception e) {
             log.error("Error trying to get MP3 metadata: {}", e.getMessage(), e);
@@ -286,15 +282,18 @@ public class App {
      */
     private static Optional<Item> getMatchItem(String audioId, Root jsonMainObject) {
         List<Item> itemList = jsonMainObject.getPage().getItems();
+
+        if (itemList.isEmpty()) {
+            return Optional.empty();
+        }
+
         String fullFilename = String.format("%s%s", audioId, AUDIOS_EXTENSION.getDefaultValue());
-        return !itemList.isEmpty()
-                ? itemList.stream()
-                .filter(item -> item.getQualities().stream()
-                        // If any match
-                        .anyMatch(quality -> StringUtils.contains(quality.getFilePath(), fullFilename)))
-                // get the first one
-                .findFirst()
-                : Optional.empty();
+        return itemList.stream()
+            .filter(item -> item.getQualities().stream()
+                // If any match
+                .anyMatch(quality -> StringUtils.contains(quality.getFilePath(), fullFilename)))
+            // get the first one
+            .findFirst();
     }
 
     /**
@@ -315,9 +314,9 @@ public class App {
 
         // Prevent problems with slash characters
         String tmpName = String.format("%s_%s%s",
-                invertedDate.get(),
-                StringUtils.replace(item.getShortTitle(), "/", "-"),
-                AUDIOS_EXTENSION.getDefaultValue()
+            invertedDate.get(),
+            StringUtils.replace(item.getShortTitle(), "/", "-"),
+            AUDIOS_EXTENSION.getDefaultValue()
         );
 
         log.info("Friendly audio name obtained: {}", tmpName);
@@ -354,6 +353,7 @@ public class App {
     }
 
     /**
+     * TODO: Delete is no needed????
      * @param jsonFilePath
      * @return Json string
      * @throws IOException
@@ -364,67 +364,85 @@ public class App {
 
     /**
      * @param currentFolder
-     * @param jsonMainObject 
+     * @param jsonMainObject
      * @return array with files that represents audios of a defined extension
      */
-    private Optional<File[]> getAudios(File currentFolder, Optional<Root> jsonMainObject) {
-        if (currentFolder == null || ! currentFolder.exists()) {
+    private Optional<File[]> getAudios(File currentFolder, Root jsonMainObject) {
+        if (currentFolder == null || !currentFolder.exists()) {
             log.error("Current folder where to find audios must exist");
             return Optional.empty();
         }
-        
-        if (jsonMainObject.isPresent()) {
-            
-            jsonMainObject.get().getPage().getItems().stream()
-            .forEach(currentItem -> {
-                
-                log.info("Processing item {}", currentItem.getLongTitle());
-                
-                // Get file name
-                Optional<String> fileName = getFileName(currentItem);
-                
-                // Try to get already downloaded file
-                String localFilePath = currentFolder.getPath() + "/" + fileName;
-                File file = new File(localFilePath);            
-                
-                // If not downloaded, download it
-                if (! file.isFile()) {
-                    String fileUrl = currentItem.getQualities().stream().findFirst().get().getFilePath();
-                    try {
-                        FileUtils.copyURLToFile(
-                                new URL(fileUrl), 
-                                new File(localFilePath), 
-                                10000, 
-                                10000);
-                    } catch (MalformedURLException e) {
-                        log.error("Problem with URL {} while trying to download it: {}", fileUrl, e);
-                    } catch (IOException e) {
-                        log.error("I/O problem while trying to download dile {}: {}", fileUrl, e);
-                    }
-                }
-                
-            });
-            
-        }else {
-            
+
+        if (jsonMainObject != null) {
+
+            jsonMainObject.getPage().getItems()
+                .forEach(ensureDownloadingMissingAudios(currentFolder));
+        } else {
+
             log.error("API information about current page is necessary!!");
             return Optional.empty();
         }
 
         return Optional.ofNullable(currentFolder.listFiles((current, name) -> name.toLowerCase().endsWith(this.appConfig.getParameter(AUDIOS_EXTENSION))));
     }
-    
+
+    private Consumer<Item> ensureDownloadingMissingAudios(File currentFolder) {
+        return currentItem -> {
+
+            log.info("Processing item {}", currentItem.getLongTitle());
+
+            // Get file name
+            String fileName = getFileName(currentItem).orElse(null);
+
+            if (fileName == null) {
+                // perhaps it worth it to log it?
+                return;
+            }
+
+            // Try to get already downloaded file
+            String localFilePath = String.format("%s%s%s", currentFolder.getPath(), System.getProperty("file.separator"), fileName);
+
+            // If not downloaded, download it
+            File file = new File(localFilePath);
+            if (isFileValid(file)) {
+                Optional<Quality> quality = currentItem.getQualities().stream().findFirst();
+                if (quality.isPresent()) {
+                    String fileUrl = quality.get().getFilePath();
+                    try {
+                        FileUtils.copyURLToFile(
+                            new URL(fileUrl),
+                            file,
+                            10000,
+                            10000);
+                    } catch (MalformedURLException e) {
+                        log.error("Problem with URL {} while trying to download it: {}", fileUrl, e);
+                    } catch (IOException e) {
+                        log.error("I/O problem while trying to download dile {}: {}", fileUrl, e);
+                    }
+                }
+            }
+        };
+    }
+
+    private boolean isFileValid(File file) {
+        return file != null && file.isFile() && FileUtils.sizeOf(file) > 0;
+    }
+
     private Optional<String> getFileName(Item item) {
-        
         Optional<String> ret = Optional.empty();
 
-        String filePath = item.getQualities().stream().findFirst().get().getFilePath();
-        String[] filePathSplitted = filePath.split("/");
-        if (filePathSplitted.length > 1) { // URL obtained
-            
-            ret = Optional.ofNullable(filePathSplitted[filePathSplitted.length-1]);
+        Optional<Quality> quality = item.getQualities().stream().findFirst();
+        if (quality.isEmpty()) {
+            log.warn("No Quality found for Item.title {}", item.getTitle());
+            return ret;
         }
-        
+
+        String filePath = quality.get().getFilePath();
+        String[] filePathSplit = filePath.split("/");
+        if (filePathSplit.length > 1) { // URL obtained
+            return Optional.ofNullable(filePathSplit[filePathSplit.length - 1]);
+        }
+
         return ret;
     }
 
